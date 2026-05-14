@@ -22,8 +22,8 @@ else:
 print(f"\n1. Loading data from {CSV_PATH}...")
 dataset = pd.read_csv(CSV_PATH)
 
-# Normalisation — divide rainfall by 100 to keep values in a similar range to water levels
-dataset['rainfall_mm'] = dataset['rainfall_mm'] / 100.0
+# Note: rainfall_mm is kept in raw mm units — the synthetic targets were computed
+# with raw values so normalising here would cause a training/inference mismatch.
 
 # Separate inputs and targets
 inputs = dataset[['rainfall_mm', 'upstream_level_m']].values
@@ -69,9 +69,9 @@ print(f"   Validation Loss (MSE):  {final_val_loss:.4f}")
 print(f"   Validation Error (MAE): {final_mae:.4f} meters")
 
 # --- 6. MAKE A REAL PREDICTION ---
-# Input: 95mm rain (normalised = 0.95), upstream level = 2.8m
+# Input: 95mm rain (raw mm), upstream level = 2.8m
 print("\n3. Testing hypothetical storm (95mm rain, 2.8m upstream)...")
-new_weather = tf.constant([[0.95, 2.8]])
+new_weather = tf.constant([[95.0, 2.8]])
 future_water_level = model.predict(new_weather, verbose=0)
 print(f">>> Predicted Water Level at Taman Sri Muda: {future_water_level[0][0]:.2f} meters")
 

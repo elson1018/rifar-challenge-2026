@@ -14,6 +14,8 @@ google-pasta==0.2.0
 grpcio==1.80.0
 h11==0.16.0
 h5py==3.14.0
+httpcore==1.0.9
+httpx==0.28.1
 idna==3.15
 importlib_metadata==8.7.1
 joblib==1.5.3
@@ -35,6 +37,8 @@ pydantic==2.13.4
 pydantic_core==2.46.4
 Pygments==2.20.0
 python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+python-telegram-bot==22.5
 pytz==2026.2
 requests==2.32.5
 rich==15.0.0

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import { AlertTriangle, Droplets, Activity } from 'lucide-react';
 import {
@@ -22,23 +22,81 @@ ChartJS.register(
   Legend
 );
 
+const API = 'http://localhost:8000';
+
 function App() {
-  // Mock Data for testing
-  const [metrics, setMetrics] = useState({
-    rainfall: 95.0,
-    upstream: 2.8,
-    predictedLevel: 3.59,
-    status: 'WARNING: High Flood Risk',
+  const [rainfall, setRainfall] = useState('80.0');
+  const [upstream, setUpstream] = useState('2.5');
+  
+  const [prediction, setPrediction] = useState({
+    predictedLevel: 8.65,
+    status: 'DANGER: Severe Flood Risk',
     color: 'text-red-600'
   });
 
-  // Chart Configuration
+  const [history, setHistory] = useState([1.3, 2.0, 3.1, 1.1, 4.2]);
+
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      const rainVal = parseFloat(rainfall);
+      const upVal = parseFloat(upstream);
+      
+      if (isNaN(rainVal) || isNaN(upVal)) return;
+
+      try {
+        const res = await fetch(`${API}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rainfall_mm: rainVal,
+            upstream_level_m: upVal
+          })
+        });
+        const data = await res.json();
+        
+        const level = data.predicted_water_level_m;
+        
+        let statusText = 'NORMAL: Low Risk';
+        let colorText = 'text-green-600';
+        
+        if (level >= 4.0) {
+          statusText = 'DANGER: Severe Flood Risk';
+          colorText = 'text-red-600';
+        } else if (level >= 3.0) {
+          statusText = 'WARNING: High Flood Risk';
+          colorText = 'text-yellow-500';
+        }
+
+        setPrediction({
+          predictedLevel: level.toFixed(2),
+          status: statusText,
+          color: colorText
+        });
+        
+        setHistory(prev => {
+          const newHistory = [...prev, level];
+          if (newHistory.length > 10) newHistory.shift();
+          return newHistory;
+        });
+
+      } catch (error) {
+        console.error("Failed to fetch prediction", error);
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      fetchPrediction();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [rainfall, upstream]);
+
   const chartData = {
-    labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5'],
+    labels: history.map((_, i) => `T-${history.length - 1 - i}`),
     datasets: [
       {
-        label: 'Historical Water Level (m)',
-        data: [1.3, 2.0, 3.1, 1.1, 4.2],
+        label: 'Predicted Water Level (m)',
+        data: history,
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.5)',
         tension: 0.3,
@@ -62,7 +120,7 @@ function App() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 font-medium">Current Rainfall</p>
-              <p className="text-3xl font-bold text-gray-800 mt-1">{metrics.rainfall} mm</p>
+              <p className="text-3xl font-bold text-gray-800 mt-1">{rainfall} mm</p>
             </div>
             <div className="p-3 bg-blue-50 rounded-lg text-blue-500">
               <Droplets size={28} />
@@ -72,7 +130,7 @@ function App() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 font-medium">Upstream Level</p>
-              <p className="text-3xl font-bold text-gray-800 mt-1">{metrics.upstream} m</p>
+              <p className="text-3xl font-bold text-gray-800 mt-1">{upstream} m</p>
             </div>
             <div className="p-3 bg-cyan-50 rounded-lg text-cyan-500">
               <Activity size={28} />
@@ -82,10 +140,10 @@ function App() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 font-medium">AI Predicted Flood Level</p>
-              <p className={`text-3xl font-bold mt-1 ${metrics.color}`}>{metrics.predictedLevel} m</p>
-              <p className={`text-xs font-bold mt-1 ${metrics.color}`}>{metrics.status}</p>
+              <p className={`text-3xl font-bold mt-1 ${prediction.color}`}>{prediction.predictedLevel} m</p>
+              <p className={`text-xs font-bold mt-1 ${prediction.color}`}>{prediction.status}</p>
             </div>
-            <div className={`p-3 rounded-lg ${metrics.color === 'text-red-600' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-500'}`}>
+            <div className={`p-3 rounded-lg ${prediction.color.includes('red') ? 'bg-red-50 text-red-500' : prediction.color.includes('yellow') ? 'bg-yellow-50 text-yellow-500' : 'bg-green-50 text-green-500'}`}>
               <AlertTriangle size={28} />
             </div>
           </div>
