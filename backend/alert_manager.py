@@ -95,6 +95,8 @@ class AlertManager:
         # Level dropped back to normal — reset state so next event fires fresh
         if new_level == NORMAL:
             state["state"] = NORMAL
+            state["last_sent_at"] = None
+            state["last_level"] = NORMAL
             return {"alerted": False, "reason": "Water level is normal."}
 
         is_escalation   = (new_level == DANGER and state["state"] == WARNING)
