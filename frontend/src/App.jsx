@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
-import { AlertTriangle, Droplets, Activity, MapPin } from 'lucide-react';
+import { AlertTriangle, Droplets, Activity, MapPin, Cloud, CloudRain, CloudLightning } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useBackoffPolling } from './hooks/useBackoffPolling';
@@ -41,6 +41,7 @@ function App() {
   });
 
   const [history, setHistory] = useState([1.3, 2.0, 3.1, 1.1, 4.2]);
+  const [forecast, setForecast] = useState([]);
 
   const handleLiveStatusUpdate = (data) => {
     if (data.rainfall_mm !== undefined) setRainfall(data.rainfall_mm.toString());
@@ -77,6 +78,12 @@ function App() {
   };
 
   const { status, retryCount } = useBackoffPolling(`${API}/live-status`, handleLiveStatusUpdate, 3000);
+
+  const { status: forecastStatus } = useBackoffPolling(
+    `${API}/forecast-risk`,
+    (data) => setForecast(data),
+    6000
+  );
 
   const chartData = {
     labels: history.map((_, i) => `T-${history.length - 1 - i}`),
@@ -222,6 +229,64 @@ function App() {
                     </Popup>
                   </Circle>
                 </MapContainer>
+              </div>
+            </div>
+
+            {/* Proactive Weather & AI Risk Forecast Section */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 col-span-1 lg:col-span-2">
+              <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <CloudLightning size={20} className="text-indigo-500" />
+                Proactive Risk Forecast
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {forecast && forecast.map((item, idx) => {
+                  let badgeColor = "bg-green-100 text-green-800 border-green-200";
+                  let bgCard = "bg-green-50/20";
+                  let iconElement = <Cloud className="text-slate-500 animate-pulse" size={24} />;
+
+                  if (item.hazard_level === "CRITICAL") {
+                    badgeColor = "bg-red-100 text-red-800 border-red-200 animate-pulse";
+                    bgCard = "bg-red-50/30 border-red-100/50";
+                    iconElement = <CloudLightning className="text-red-500 animate-bounce" size={24} />;
+                  } else if (item.hazard_level === "WARNING") {
+                    badgeColor = "bg-yellow-100 text-yellow-800 border-yellow-200";
+                    bgCard = "bg-yellow-50/30 border-yellow-100/50";
+                    iconElement = <CloudRain className="text-yellow-600 animate-pulse" size={24} />;
+                  }
+
+                  return (
+                    <div key={idx} className={`p-5 rounded-xl border border-slate-100/80 transition-all hover:shadow-md ${bgCard} flex flex-col justify-between`}>
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-extrabold text-slate-800 text-base">{item.label}</span>
+                          {iconElement}
+                        </div>
+                        {item.forecast_time && (
+                          <p className="text-[10px] text-slate-400 mb-2">{item.forecast_time}</p>
+                        )}
+                        <h3 className="text-sm font-semibold text-slate-700 mb-1">{item.condition}</h3>
+                        <p className="text-xs text-slate-500">Expected Rain: <strong>{item.rainfall_mm} mm</strong></p>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-100 flex flex-col gap-3 mt-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-500">AI Water Level:</span>
+                          <span className="text-sm font-bold text-slate-800">{item.predicted_level_m} m</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-500">Hazard Index:</span>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>
+                            {item.hazard_level}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 italic leading-relaxed bg-white/70 p-2 rounded-lg border border-slate-50/50">
+                          💡 {item.advice}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
