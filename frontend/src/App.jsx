@@ -239,7 +239,7 @@ function App() {
                 Proactive Risk Forecast
               </h2>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
                 {forecast && forecast.map((item, idx) => {
                   let badgeColor = "bg-green-100 text-green-800 border-green-200";
                   let bgCard = "bg-green-50/20";
@@ -266,7 +266,10 @@ function App() {
                           <p className="text-[10px] text-slate-400 mb-2">{item.forecast_time}</p>
                         )}
                         <h3 className="text-sm font-semibold text-slate-700 mb-1">{item.condition}</h3>
-                        <p className="text-xs text-slate-500">Expected Rain: <strong>{item.rainfall_mm} mm</strong></p>
+                        <p className="text-xs text-slate-500">
+                          Rain: <strong>{item.effective_rain_mm ?? item.rainfall_mm} mm</strong>
+                          <span className="ml-1 text-slate-400">({item.rain_probability ?? 0}% chance)</span>
+                        </p>
                       </div>
 
                       <div className="pt-4 border-t border-slate-100 flex flex-col gap-3 mt-4">
