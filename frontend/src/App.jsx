@@ -3,6 +3,8 @@ import { Line } from 'react-chartjs-2';
 import { AlertTriangle, Droplets, Activity, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useBackoffPolling } from './hooks/useBackoffPolling';
+import ConnectionBanner from './components/ConnectionBanner';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -40,60 +42,41 @@ function App() {
 
   const [history, setHistory] = useState([1.3, 2.0, 3.1, 1.1, 4.2]);
 
-  useEffect(() => {
-    const fetchPrediction = async () => {
-      const rainVal = parseFloat(rainfall);
-      const upVal = parseFloat(upstream);
+  const handleLiveStatusUpdate = (data) => {
+    if (data.rainfall_mm !== undefined) setRainfall(data.rainfall_mm.toString());
+    if (data.water_level_m !== undefined) setUpstream(data.water_level_m.toString());
+
+    if (data.predicted_level_m !== undefined) {
+      const level = data.predicted_level_m;
       
-      if (isNaN(rainVal) || isNaN(upVal)) return;
-
-      try {
-        const res = await fetch(`${API}/predict`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rainfall_mm: rainVal,
-            upstream_level_m: upVal
-          })
-        });
-        const data = await res.json();
-        
-        const level = data.predicted_water_level_m;
-        
-        let statusText = 'NORMAL: Low Risk';
-        let colorText = 'text-green-600';
-        
-        if (level >= 4.0) {
-          statusText = 'DANGER: Severe Flood Risk';
-          colorText = 'text-red-600';
-        } else if (level >= 3.0) {
-          statusText = 'WARNING: High Flood Risk';
-          colorText = 'text-yellow-500';
-        }
-
-        setPrediction({
-          predictedLevel: level.toFixed(2),
-          status: statusText,
-          color: colorText
-        });
-        
-        setHistory(prev => {
-          const newHistory = [...prev, level];
-          if (newHistory.length > 15) newHistory.shift();
-          return newHistory;
-        });
-
-      } catch (error) {
-        console.error("Failed to fetch prediction", error);
+      let statusText = 'NORMAL: Low Risk';
+      let colorText = 'text-green-600';
+      
+      if (level >= 4.5) {
+        statusText = 'CRITICAL: Severe Flood Risk';
+        colorText = 'text-red-600';
+      } else if (level >= 4.0) {
+        statusText = 'WARNING: Elevated Risk';
+        colorText = 'text-yellow-500';
       }
-    };
 
-    const timeoutId = setTimeout(() => {
-      fetchPrediction();
-    }, 500);
+      setPrediction({
+        predictedLevel: level.toFixed(2),
+        status: statusText,
+        color: colorText
+      });
+      
+      setHistory(prev => {
+        const lastEl = prev[prev.length - 1];
+        if (lastEl === level) return prev; // Avoid duplicate sequence logs in dynamic trend chart
+        const newHistory = [...prev, level];
+        if (newHistory.length > 15) newHistory.shift();
+        return newHistory;
+      });
+    }
+  };
 
-    return () => clearTimeout(timeoutId);
-  }, [rainfall, upstream]);
+  const { status, retryCount } = useBackoffPolling(`${API}/live-status`, handleLiveStatusUpdate, 3000);
 
   const chartData = {
     labels: history.map((_, i) => `T-${history.length - 1 - i}`),
@@ -111,6 +94,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 lg:p-10 font-sans selection:bg-blue-100">
+      <ConnectionBanner status={status} retryCount={retryCount} />
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header */}
