@@ -147,17 +147,19 @@ async def get_forecast_risk(
     if demo:
         # High-impact convective storm simulation for demonstration
         forecast_data = [
-            {"label": "+1 Hour",  "tag": "Short-Term",  "condition": "Heavy Rain",       "rainfall_mm": 45.0, "upstream_level_m": 2.4},
-            {"label": "+12 Hours", "tag": "Mid-Term",   "condition": "Severe Thunderstorm", "rainfall_mm": 95.0, "upstream_level_m": 3.5},
-            {"label": "+24 Hours", "tag": "Long-Term",  "condition": "Light Drizzle",     "rainfall_mm": 10.0, "upstream_level_m": 1.7}
+            {"label": "+1 Hour",   "condition": "Heavy Rain",          "rainfall_mm": 45.0, "upstream_level_m": 2.4},
+            {"label": "+2 Hours",  "condition": "Moderate Rain",        "rainfall_mm": 60.0, "upstream_level_m": 2.8},
+            {"label": "+3 Hours",  "condition": "Severe Thunderstorm",  "rainfall_mm": 95.0, "upstream_level_m": 3.5},
+            {"label": "+12 Hours", "condition": "Rain Showers",         "rainfall_mm": 30.0, "upstream_level_m": 2.1},
+            {"label": "+24 Hours", "condition": "Light Drizzle",        "rainfall_mm": 10.0, "upstream_level_m": 1.7}
         ]
     else:
-        # Live Open-Meteo API — 3 forecast horizons for early warning
+        # Live Open-Meteo API — 5 forecast horizons for early warning
         try:
             url = (
                 "https://api.open-meteo.com/v1/forecast"
                 "?latitude=3.0296&longitude=101.5288"
-                "&hourly=precipitation,weather_code"
+                "&hourly=precipitation,precipitation_probability,weather_code"
                 "&timezone=Asia/Kuala_Lumpur"
                 "&forecast_days=2"
             )
@@ -184,23 +186,27 @@ async def get_forecast_risk(
                 return "Cloudy"
 
             forecast_data = []
-            for offset, label, tag in [(1, "+1 Hour", "Short-Term"), (12, "+12 Hours", "Mid-Term"), (24, "+24 Hours", "Long-Term")]:
+            for offset, label in [(1, "+1 Hour"), (2, "+2 Hours"), (3, "+3 Hours"), (12, "+12 Hours"), (24, "+24 Hours")]:
                 target_idx = idx + offset
                 if target_idx >= len(hourly["time"]):
                     target_idx = len(hourly["time"]) - 1
 
-                rain_mm   = float(hourly["precipitation"][target_idx])
-                wmo_code  = int(hourly["weather_code"][target_idx])
-                time_str  = hourly["time"][target_idx]
-                dt        = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M")
+                rain_mm    = float(hourly["precipitation"][target_idx])
+                rain_prob  = int(hourly["precipitation_probability"][target_idx])
+                wmo_code   = int(hourly["weather_code"][target_idx])
+                time_str   = hourly["time"][target_idx]
+                dt         = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M")
 
-                estimated_upstream = 1.5 + (rain_mm * 0.02)
+                # Use probability to estimate effective rainfall when mm is 0
+                # e.g. 70% probability → adds 70*0.3 = 21mm equivalent pressure
+                effective_rain = rain_mm if rain_mm > 0 else (rain_prob * 0.3)
+                estimated_upstream = 1.5 + (effective_rain * 0.02)
 
                 forecast_data.append({
                     "label": label,
-                    "tag": tag,
                     "condition": wmo_to_condition(wmo_code),
                     "rainfall_mm": rain_mm,
+                    "rain_probability": rain_prob,
                     "upstream_level_m": round(estimated_upstream, 3),
                     "forecast_time": dt.strftime("%d %b %Y %H:%M")
                 })
@@ -208,15 +214,22 @@ async def get_forecast_risk(
         except Exception:
             # Graceful fallback to simulation if API is unreachable
             forecast_data = [
-                {"label": "+1 Hour",  "tag": "Short-Term",  "condition": "Heavy Rain",          "rainfall_mm": 45.0, "upstream_level_m": 2.4},
-                {"label": "+12 Hours", "tag": "Mid-Term",   "condition": "Severe Thunderstorm", "rainfall_mm": 95.0, "upstream_level_m": 3.5},
-                {"label": "+24 Hours", "tag": "Long-Term",  "condition": "Light Drizzle",       "rainfall_mm": 10.0, "upstream_level_m": 1.7}
+                {"label": "+1 Hour",   "condition": "Heavy Rain",         "rainfall_mm": 45.0, "rain_probability": 90, "upstream_level_m": 2.4},
+                {"label": "+2 Hours",  "condition": "Moderate Rain",       "rainfall_mm": 60.0, "rain_probability": 85, "upstream_level_m": 2.8},
+                {"label": "+3 Hours",  "condition": "Severe Thunderstorm", "rainfall_mm": 95.0, "rain_probability": 95, "upstream_level_m": 3.5},
+                {"label": "+12 Hours", "condition": "Rain Showers",        "rainfall_mm": 30.0, "rain_probability": 60, "upstream_level_m": 2.1},
+                {"label": "+24 Hours", "condition": "Light Drizzle",       "rainfall_mm": 10.0, "rain_probability": 30, "upstream_level_m": 1.7}
             ]
 
     results = []
     for item in forecast_data:
         predicted = await prediction_service.predict_async(item["rainfall_mm"], item["upstream_level_m"])
         predicted = round(predicted, 3)
+
+        # Compute the effective rain that was used for model input
+        raw_mm   = item["rainfall_mm"]
+        prob     = item.get("rain_probability", 0)
+        eff_rain = raw_mm if raw_mm > 0 else round(prob * 0.3, 1)
 
         if predicted >= 4.5:
             hazard = "CRITICAL"
@@ -230,10 +243,11 @@ async def get_forecast_risk(
 
         results.append({
             "label":              item["label"],
-            "tag":                item["tag"],
             "forecast_time":      item.get("forecast_time", ""),
             "condition":          item["condition"],
             "rainfall_mm":        item["rainfall_mm"],
+            "effective_rain_mm":  eff_rain,
+            "rain_probability":   item.get("rain_probability", 0),
             "predicted_level_m":  predicted,
             "hazard_level":       hazard,
             "advice":             advice
