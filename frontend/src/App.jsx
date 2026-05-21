@@ -291,6 +291,15 @@ function App() {
                   );
                 })}
               </div>
+
+              {/* Disclaimer */}
+              <div className="mt-5 flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                <span className="text-slate-400 mt-0.5 shrink-0">⚠️</span>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Forecasts are generated via Open-Meteo and AI simulation. Real-world conditions may vary.
+                  Always follow official <strong className="text-slate-600">JPS (Jabatan Pengairan dan Saliran)</strong> and local authority advisories.
+                </p>
+              </div>
             </div>
 
         </div>
