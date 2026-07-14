@@ -19,11 +19,30 @@ from app.core.security import validate_api_key
 
 router = APIRouter()
 
-# --- LIVE SENSOR STATE (in-memory simulation database) ---
-live_sensor_data = {
-    "water_level_m": 2.5,
-    "rainfall_mm": 80.0
-}
+def _seed_from_open_meteo() -> dict:
+    """
+    Fetch the current-hour rainfall from Open-Meteo at startup so the dashboard
+    never shows fabricated hardcoded values before the first sensor POST.
+    Falls back to 0.0 mm if the API is unreachable.
+    """
+    try:
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=3.0296&longitude=101.5288"
+            "&hourly=precipitation&timezone=Asia/Kuala_Lumpur&forecast_days=1"
+        )
+        res = requests.get(url, timeout=5).json()
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        idx = now.hour
+        rain = float(res["hourly"]["precipitation"][idx])
+        print(f"[RIFAR] Open-Meteo startup seed: rainfall={rain} mm at hour {idx}.")
+        return {"water_level_m": None, "rainfall_mm": rain}
+    except Exception as e:
+        print(f"[RIFAR] Open-Meteo startup seed failed ({e}). Defaulting to 0.0 mm.")
+        return {"water_level_m": None, "rainfall_mm": 0.0}
+
+# --- LIVE SENSOR STATE (seeded from Open-Meteo on startup; overwritten by POST /sensor) ---
+live_sensor_data = _seed_from_open_meteo()
 
 @router.get("/", tags=["Health"])
 def health_check():
@@ -115,8 +134,10 @@ async def get_live_status(
     Returns live readings AND corresponding AI predictions in a single response payload.
     Reduces network traffic by 50% for high-efficiency client dashboards.
     """
-    water_level = live_sensor_data["water_level_m"]
-    rainfall = live_sensor_data["rainfall_mm"]
+    # Coerce None to 0.0 so the Keras model always receives valid floats.
+    # water_level_m is None until the first physical /sensor POST arrives.
+    water_level = live_sensor_data["water_level_m"] or 0.0
+    rainfall = live_sensor_data["rainfall_mm"] or 0.0
 
     # Asynchronously execute inference
     predicted = await prediction_service.predict_async(rainfall, water_level)
@@ -151,7 +172,9 @@ async def get_forecast_risk(
             {"label": "+2 Hours",  "condition": "Moderate Rain",        "rainfall_mm": 60.0, "upstream_level_m": 2.8},
             {"label": "+3 Hours",  "condition": "Severe Thunderstorm",  "rainfall_mm": 95.0, "upstream_level_m": 3.5},
             {"label": "+12 Hours", "condition": "Rain Showers",         "rainfall_mm": 30.0, "upstream_level_m": 2.1},
-            {"label": "+24 Hours", "condition": "Light Drizzle",        "rainfall_mm": 10.0, "upstream_level_m": 1.7}
+            {"label": "+24 Hours", "condition": "Light Drizzle",        "rainfall_mm": 10.0, "upstream_level_m": 1.7},
+            {"label": "+2 Days",   "condition": "Partly Cloudy",        "rainfall_mm":  5.0, "upstream_level_m": 1.4},
+            {"label": "+3 Days",   "condition": "Clear Sky",            "rainfall_mm":  0.0, "upstream_level_m": 1.2}
         ]
     else:
         # Live Open-Meteo API — 5 forecast horizons for early warning
@@ -161,7 +184,7 @@ async def get_forecast_risk(
                 "?latitude=3.0296&longitude=101.5288"
                 "&hourly=precipitation,precipitation_probability,weather_code"
                 "&timezone=Asia/Kuala_Lumpur"
-                "&forecast_days=2"
+                "&forecast_days=10"
             )
             res = requests.get(url, timeout=5).json()
             hourly = res["hourly"]
@@ -186,7 +209,7 @@ async def get_forecast_risk(
                 return "Cloudy"
 
             forecast_data = []
-            for offset, label in [(1, "+1 Hour"), (2, "+2 Hours"), (3, "+3 Hours"), (12, "+12 Hours"), (24, "+24 Hours")]:
+            for offset, label in [(1, "+1 Hour"), (2, "+2 Hours"), (3, "+3 Hours"), (12, "+12 Hours"), (24, "+24 Hours"), (48, "+2 Days"), (72, "+3 Days")]:
                 target_idx = idx + offset
                 if target_idx >= len(hourly["time"]):
                     target_idx = len(hourly["time"]) - 1
@@ -218,7 +241,9 @@ async def get_forecast_risk(
                 {"label": "+2 Hours",  "condition": "Moderate Rain",       "rainfall_mm": 60.0, "rain_probability": 85, "upstream_level_m": 2.8},
                 {"label": "+3 Hours",  "condition": "Severe Thunderstorm", "rainfall_mm": 95.0, "rain_probability": 95, "upstream_level_m": 3.5},
                 {"label": "+12 Hours", "condition": "Rain Showers",        "rainfall_mm": 30.0, "rain_probability": 60, "upstream_level_m": 2.1},
-                {"label": "+24 Hours", "condition": "Light Drizzle",       "rainfall_mm": 10.0, "rain_probability": 30, "upstream_level_m": 1.7}
+                {"label": "+24 Hours", "condition": "Light Drizzle",       "rainfall_mm": 10.0, "rain_probability": 30, "upstream_level_m": 1.7},
+                {"label": "+2 Days",   "condition": "Partly Cloudy",       "rainfall_mm":  5.0, "rain_probability": 20, "upstream_level_m": 1.4},
+                {"label": "+3 Days",   "condition": "Clear Sky",           "rainfall_mm":  0.0, "rain_probability":  5, "upstream_level_m": 1.2}
             ]
 
     results = []

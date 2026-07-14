@@ -28,16 +28,16 @@ ChartJS.register(
   Filler
 );
 
-const API = 'http://localhost:8000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function App() {
   const [rainfall, setRainfall] = useState('80.0');
   const [upstream, setUpstream] = useState('2.5');
   
   const [prediction, setPrediction] = useState({
-    predictedLevel: 8.65,
-    status: 'DANGER: Severe Flood Risk',
-    color: 'text-red-600'
+    predictedLevel: '--',
+    status: 'Connecting...',
+    color: 'text-slate-400'
   });
 
   const [history, setHistory] = useState([1.3, 2.0, 3.1, 1.1, 4.2]);
@@ -239,7 +239,7 @@ function App() {
                 Proactive Risk Forecast
               </h2>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
                 {forecast && forecast.map((item, idx) => {
                   let badgeColor = "bg-green-100 text-green-800 border-green-200";
                   let bgCard = "bg-green-50/20";
@@ -284,7 +284,7 @@ function App() {
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 italic leading-relaxed bg-white/70 p-2 rounded-lg border border-slate-50/50">
-                          💡 {item.advice}
+                           {item.advice}
                         </p>
                       </div>
                     </div>
