@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 
 class PredictRequest(BaseModel):
     rainfall_mm: float = Field(..., ge=0, description="Rainfall in millimetres (≥ 0)")
+    rainfall_3d_sum: float = Field(..., ge=0, description="3-day accumulated rainfall in mm (antecedent moisture feature)")
     upstream_level_m: float = Field(..., ge=0, description="Upstream river level in metres (≥ 0)")
 
 class SensorRequest(BaseModel):
@@ -22,5 +23,6 @@ class SensorResponse(BaseModel):
 class LiveStatusResponse(BaseModel):
     water_level_m: float
     rainfall_mm: float
+    rainfall_3d_sum: float
     predicted_level_m: float
     alert: Dict[str, Any]

@@ -26,7 +26,7 @@ dataset = pd.read_csv(CSV_PATH)
 # with raw values so normalising here would cause a training/inference mismatch.
 
 # Separate inputs and targets
-inputs = dataset[['rainfall_mm', 'upstream_level_m']].values
+inputs = dataset[['rainfall_mm', 'rainfall_3d_sum', 'upstream_level_m']].values
 targets = dataset[['local_water_level_m']].values
 
 # --- 2. TRAIN / TEST SPLIT ---
@@ -39,7 +39,7 @@ print(f"   Training samples: {len(X_train)} | Test samples: {len(X_test)}")
 # --- 3. BUILD THE AI MODEL ---
 # Added hidden layers so the model can learn non-linear flood patterns
 model = tf.keras.Sequential([
-    tf.keras.layers.Dense(64, activation='relu', input_dim=2),
+    tf.keras.layers.Dense(64, activation='relu', input_dim=3),
     tf.keras.layers.Dense(32, activation='relu'),
     tf.keras.layers.Dense(1)
 ])
@@ -69,9 +69,10 @@ print(f"   Validation Loss (MSE):  {final_val_loss:.4f}")
 print(f"   Validation Error (MAE): {final_mae:.4f} meters")
 
 # --- 6. MAKE A REAL PREDICTION ---
-# Input: 95mm rain (raw mm), upstream level = 2.8m
-print("\n3. Testing hypothetical storm (95mm rain, 2.8m upstream)...")
-new_weather = tf.constant([[95.0, 2.8]])
+# Input order: [rainfall_mm, rainfall_3d_sum, upstream_level_m]
+# 95mm/day for 3 consecutive days → rainfall_3d_sum = 285mm (worst-case storm scenario)
+print("\n3. Testing hypothetical storm (95mm rain, 285mm 3-day accumulation, 2.8m upstream)...")
+new_weather = tf.constant([[95.0, 285.0, 2.8]])
 future_water_level = model.predict(new_weather, verbose=0)
 print(f">>> Predicted Water Level at Taman Sri Muda: {future_water_level[0][0]:.2f} meters")
 

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Security
 from typing import Dict, Any
+from collections import deque
 import requests
 import datetime
 
@@ -19,6 +20,15 @@ from app.core.security import validate_api_key
 
 router = APIRouter()
 
+# --- ANTECEDENT RAINFALL HISTORY (rolling 3-reading deque for rainfall_3d_sum feature) ---
+# Tracks the last 3 daily-equivalent rainfall readings so the Keras model receives its
+# antecedent moisture input even in a live-sensor or single-reading context.
+_rainfall_history: deque = deque([0.0, 0.0, 0.0], maxlen=3)
+
+def _compute_3d_sum() -> float:
+    """Return the sum of the last 3 recorded rainfall readings (mm)."""
+    return round(sum(_rainfall_history), 1)
+
 def _seed_from_open_meteo() -> dict:
     """
     Fetch the current-hour rainfall from Open-Meteo at startup so the dashboard
@@ -36,6 +46,8 @@ def _seed_from_open_meteo() -> dict:
         idx = now.hour
         rain = float(res["hourly"]["precipitation"][idx])
         print(f"[RIFAR] Open-Meteo startup seed: rainfall={rain} mm at hour {idx}.")
+        # Seed the 3-day history with the live reading as a conservative baseline
+        _rainfall_history.extend([rain, rain, rain])
         return {"water_level_m": None, "rainfall_mm": rain}
     except Exception as e:
         print(f"[RIFAR] Open-Meteo startup seed failed ({e}). Defaulting to 0.0 mm.")
@@ -67,7 +79,9 @@ async def predict(
     Runs Keras model asynchronously in a threadpool and dispatches any Telegram notifications
     via async Background Tasks to prevent HTTP connection blocking.
     """
-    predicted = await prediction_service.predict_async(request.rainfall_mm, request.upstream_level_m)
+    predicted = await prediction_service.predict_async(
+        request.rainfall_mm, request.rainfall_3d_sum, request.upstream_level_m
+    )
     
     # Check alert conditions
     should_alert, alert_result = alert_manager.evaluate_alert("prediction", predicted)
@@ -101,10 +115,11 @@ async def sensor_reading(
     if smoothed_depth is None:
         smoothed_depth = request.water_level_m
 
-    # 2. Update global simulation database
+    # 2. Update global simulation database and rolling rainfall history
     live_sensor_data["water_level_m"] = smoothed_depth
     if request.rainfall_mm is not None:
         live_sensor_data["rainfall_mm"] = request.rainfall_mm
+        _rainfall_history.append(request.rainfall_mm)  # advance the 3-day rolling window
 
     # 3. Check alarm threshold
     should_alert, alert_result = alert_manager.evaluate_alert("sensor", smoothed_depth)
@@ -138,9 +153,10 @@ async def get_live_status(
     # water_level_m is None until the first physical /sensor POST arrives.
     water_level = live_sensor_data["water_level_m"] or 0.0
     rainfall = live_sensor_data["rainfall_mm"] or 0.0
+    rainfall_3d = _compute_3d_sum()
 
     # Asynchronously execute inference
-    predicted = await prediction_service.predict_async(rainfall, water_level)
+    predicted = await prediction_service.predict_async(rainfall, rainfall_3d, water_level)
     
     # Evaluate prediction alert
     should_alert, alert_result = alert_manager.evaluate_alert("prediction", predicted)
@@ -150,6 +166,7 @@ async def get_live_status(
     return LiveStatusResponse(
         water_level_m=water_level,
         rainfall_mm=rainfall,
+        rainfall_3d_sum=rainfall_3d,
         predicted_level_m=round(predicted, 3),
         alert=alert_result
     )
@@ -247,14 +264,17 @@ async def get_forecast_risk(
             ]
 
     results = []
+    current_3d = _compute_3d_sum()  # antecedent moisture from live sensor history
     for item in forecast_data:
-        predicted = await prediction_service.predict_async(item["rainfall_mm"], item["upstream_level_m"])
-        predicted = round(predicted, 3)
-
-        # Compute the effective rain that was used for model input
+        # Estimate forward-looking 3d accumulation:
+        # current antecedent moisture + this horizon's expected rainfall (conservative proxy)
         raw_mm   = item["rainfall_mm"]
         prob     = item.get("rain_probability", 0)
         eff_rain = raw_mm if raw_mm > 0 else round(prob * 0.3, 1)
+        est_3d   = round(current_3d + eff_rain, 1)
+
+        predicted = await prediction_service.predict_async(raw_mm, est_3d, item["upstream_level_m"])
+        predicted = round(predicted, 3)
 
         if predicted >= 4.5:
             hazard = "CRITICAL"
