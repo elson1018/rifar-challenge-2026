@@ -48,10 +48,10 @@ def _seed_from_open_meteo() -> dict:
         print(f"[RIFAR] Open-Meteo startup seed: rainfall={rain} mm at hour {idx}.")
         # Seed the 3-day history with the live reading as a conservative baseline
         _rainfall_history.extend([rain, rain, rain])
-        return {"water_level_m": None, "rainfall_mm": rain}
+        return {"water_level_m": 1.5, "rainfall_mm": rain}
     except Exception as e:
         print(f"[RIFAR] Open-Meteo startup seed failed ({e}). Defaulting to 0.0 mm.")
-        return {"water_level_m": None, "rainfall_mm": 0.0}
+        return {"water_level_m": 1.5, "rainfall_mm": 0.0}
 
 # --- LIVE SENSOR STATE (seeded from Open-Meteo on startup; overwritten by POST /sensor) ---
 live_sensor_data = _seed_from_open_meteo()
